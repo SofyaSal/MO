@@ -1,221 +1,80 @@
-#Включение нужных библиотек и функций отрисовок линий
-import numpy as np
-import warnings
-warnings.filterwarnings('ignore')
-
+import pandas as pd
+from sklearn.preprocessing import StandardScaler
+from sklearn.preprocessing import LabelEncoder
+from sklearn.model_selection import train_test_split
+from sklearn.model_selection import KFold
+from sklearn.model_selection import GridSearchCV
+from sklearn.svm import SVC
+from sklearn.ensemble import RandomForestClassifier, GradientBoostingClassifier
+from sklearn.metrics import accuracy_score, confusion_matrix, classification_report
+import seaborn as sns
 import matplotlib.pyplot as plt
-import matplotlib.lines as mlines
-plt.rcParams['figure.figsize'] = (8,6)
+
 %matplotlib inline
 
-from sklearn.datasets import load_iris
-from sklearn.decomposition import PCA
-from sklearn.model_selection import train_test_split
+iris_data_columns = ['sepal-length', 'sepal-width', 'petal-length', 'petal-width', 'class']
+iris_data = pd.read_csv("iris.data", header=None, names=iris_data_columns)
+iris_data.head()
+
+iris_data.isnull().sum()
+
+iris_data.dtypes
+
+sns.pairplot(iris_data, hue='class')
+
+class_labels = iris_data['class'].unique()
+encoder = LabelEncoder()
+iris_data['class'] = encoder.fit_transform(iris_data['class'])
+class_labels_encoded = encoder.transform(class_labels)
+iris_data.corr()['class']
+
+fig,((ax1, ax2), (ax3, ax4)) = plt.subplots(2,2, figsize=(15,9))
+
+ax1.scatter(x = iris_data['class'], y = iris_data['sepal-length'])
+ax1.set_ylabel("Sepal Length")
+ax1.set_xticks(class_labels_encoded)
+ax1.set_xticklabels(class_labels)
+
+ax2.scatter(x = iris_data['class'], y = iris_data['sepal-width'])
+ax2.set_ylabel("Sepal Width")
+ax2.set_xticks(class_labels_encoded)
+ax2.set_xticklabels(class_labels)
+
+ax3.scatter(x = iris_data['class'], y = iris_data['petal-length'])
+ax3.set_ylabel("Petal Length")
+ax3.set_xticks(class_labels_encoded)
+ax3.set_xticklabels(class_labels)
+
+ax4.scatter(x = iris_data['class'], y = iris_data['petal-width'])
+ax4.set_ylabel("Petal Width")
+ax4.set_xticks(class_labels_encoded)
+ax4.set_xticklabels(class_labels)
+
+data_X = iris_data.drop('class', axis=1)
+data_y = iris_data['class']
+
+X_train, X_test, y_train, y_test = train_test_split(data_X, data_y, test_size=0.2, random_state=1)
+
+scaler = StandardScaler()
+X_train = scaler.fit_transform(X_train)
+X_test = scaler.transform(X_test)
+
+svm_model = SVC(C=1, kernel='rbf')
+svm_model.fit(X_train, y_train)
+
+svm_y_pred = svm_model.predict(X_test)
+print('Accuracy Score:', accuracy_score(y_test, svm_y_pred))
+print('Confusion Matrix:\n', confusion_matrix(y_test, svm_y_pred))
+print('Classification Report:\n', classification_report(y_test, svm_y_pred))
+
+svm_param_grid = {'C':[0.001, 0.01, 0.1, 1, 10, 100, 1000],
+                  'kernel': ['linear', 'rbf','poly'],
+                  'gamma' :[0.0001, 0.001, 0.01, 0.1, 1, 10, 100]}
+svm_cv = KFold(n_splits=5)
+svm_grid = GridSearchCV(SVC(), svm_param_grid, cv=svm_cv, scoring='accuracy')
+svm_grid.fit(X_train, y_train)
 
 
-def newline(p1, p2, color=None):
-    ax = plt.gca()
-    xmin, xmax = ax.get_xbound()
 
-    if(p2[0] == p1[0]):
-        xmin = xmax = p1[0]
-        ymin, ymax = ax.get_ybound()
-    else:
-        ymax = p1[1]+(p2[1]-p1[1])/(p2[0]-p1[0])*(xmax-p1[0])
-        ymin = p1[1]+(p2[1]-p1[1])/(p2[0]-p1[0])*(xmin-p1[0])
-
-    l = mlines.Line2D([xmin,xmax], [ymin,ymax], color=color)
-    ax.add_line(l)
-    return l
-
-#Код реализации soft-margin SVM:
-
-#Код функции расширения вектора признаков:
-def add_bias_feature(a):
-    a_extended = np.zeros((a.shape[0],a.shape[1]+1))
-    a_extended[:,:-1] = a
-    a_extended[:,-1] = int(1)  
-    return a_extended
-
-#Классификатор
-class CustomSVM(object):
-
-    __class__ = "CustomSVM"
-    __doc__ = """
-    This is an implementation of the SVM classification algorithm
-    Note that it works only for binary classification
-
-    #############################################################
-    ######################   PARAMETERS    ######################
-    #############################################################
-
-    etha: float(default - 0.01)
-        Learning rate, gradient step
-
-    alpha: float, (default - 0.1)
-        Regularization parameter in 0.5*alpha*||w||^2
-
-    epochs: int, (default - 200)
-        Number of epochs of training
-
-    #############################################################
-    #############################################################
-    #############################################################
-    """
-    #Код функции инициализации:
-    def __init__(self, etha=0.01, alpha=0.1, epochs=200):
-        self._epochs = epochs
-        self._etha = etha
-        self._alpha = alpha
-        self._w = None
-        self.history_w = []
-        self.train_errors = None
-        self.val_errors = None
-        self.train_loss = None
-        self.val_loss = None
-
-    #Код функции обучения:
-    def fit(self, X_train, Y_train, X_val, Y_val, verbose=False):
-
-        if len(set(Y_train)) != 2 or len(set(Y_val)) != 2:
-            raise ValueError("Number of classes in Y is not equal 2!")
-
-        X_train = add_bias_feature(X_train)
-        X_val = add_bias_feature(X_val)
-        self._w = np.random.normal(loc=0, scale=0.05, size=X_train.shape[1])
-        self.history_w.append(self._w)
-        train_errors = []
-        val_errors = []
-        train_loss_epoch = []
-        val_loss_epoch = []
-
-        for epoch in range(self._epochs): 
-            tr_err = 0
-            val_err = 0
-            tr_loss = 0
-            val_loss = 0
-            for i,x in enumerate(X_train):
-                margin = Y_train[i]*np.dot(self._w,X_train[i])
-                if margin >= 1:
-                    self._w = self._w - self._etha*self._alpha*self._w/self._epochs
-                    tr_loss += self.soft_margin_loss(X_train[i],Y_train[i])
-                else:
-                    self._w = self._w +\
-                    self._etha*(Y_train[i]*X_train[i] - self._alpha*self._w/self._epochs)
-                    tr_err += 1
-                    tr_loss += self.soft_margin_loss(X_train[i],Y_train[i])
-                self.history_w.append(self._w)
-            for i,x in enumerate(X_val):
-                val_loss += self.soft_margin_loss(X_val[i], Y_val[i])
-                val_err += (Y_val[i]*np.dot(self._w,X_val[i])<1).astype(int)
-            if verbose:
-                print('epoch {}. Errors={}. Mean Hinge_loss={}'\
-                      .format(epoch,err,loss))
-            train_errors.append(tr_err)
-            val_errors.append(val_err)
-            train_loss_epoch.append(tr_loss)
-            val_loss_epoch.append(val_loss)
-        self.history_w = np.array(self.history_w)    
-        self.train_errors = np.array(train_errors)
-        self.val_errors = np.array(val_errors)
-        self.train_loss = np.array(train_loss_epoch)
-        self.val_loss = np.array(val_loss_epoch)                    
-
-    def predict(self, X:np.array) -> np.array:
-        y_pred = []
-        X_extended = add_bias_feature(X)
-        for i in range(len(X_extended)):
-            y_pred.append(np.sign(np.dot(self._w,X_extended[i])))
-        return np.array(y_pred)         
-
-    def hinge_loss(self, x, y):
-        return max(0,1 - y*np.dot(x, self._w))
-
-    def soft_margin_loss(self, x, y):
-        return self.hinge_loss(x,y)+self._alpha*np.dot(self._w, self._w)
-
-#Блок подготовки данных:
-iris = load_iris()
-X = iris.data
-Y = iris.target
-
-pca = PCA(n_components=2)
-X = pca.fit_transform(X)
-Y = (Y > 0).astype(int)*2-1
-
-X_train, X_test, Y_train, Y_test = train_test_split(X, Y, test_size=0.4, random_state=2020)
-
-#Блок инициализации и обучения:
-svm = CustomSVM(etha=0.005, alpha=0.006, epochs=150)
-svm.fit(X_train, Y_train, X_test, Y_test)
-
-print(svm.train_errors)
-print(svm._w)
-
-plt.plot(svm.train_loss, linewidth=2, label='train_loss')
-plt.plot(svm.val_loss, linewidth=2, label='test_loss')
-plt.grid()
-plt.legend(prop={'size': 15})
-plt.show()
-
-#Блок визуализации получившейся разделяющей полосы:
-d = {-1:'green', 1:'red'}
-plt.scatter(X_train[:,0], X_train[:,1], c=[d[y] for y in Y_train])
-newline([0,-svm._w[2]/svm._w[1]],[-svm._w[2]/svm._w[0],0], 'blue')
-newline([0,1/svm._w[1]-svm._w[2]/svm._w[1]],[1/svm._w[0]-svm._w[2]/svm._w[0],0])
-newline([0,-1/svm._w[1]-svm._w[2]/svm._w[1]],[-1/svm._w[0]-svm._w[2]/svm._w[0],0])
-plt.show()
-
-#Блок визуализации прогноза:
-y_pred = svm.predict(X_test)
-y_pred[y_pred != Y_test] = -100
-print('Количество ошибок для отложенной выборки: ', (y_pred == -100).astype(int).sum())
-d1 = {-1:'lime', 1:'m', -100: 'black'}
-plt.scatter(X_test[:,0], X_test[:,1], c=[d1[y] for y in y_pred])
-newline([0,-svm._w[2]/svm._w[1]],[-svm._w[2]/svm._w[0],0], 'blue')
-newline([0,1/svm._w[1]-svm._w[2]/svm._w[1]],[1/svm._w[0]-svm._w[2]/svm._w[0],0])
-newline([0,-1/svm._w[1]-svm._w[2]/svm._w[1]],[-1/svm._w[0]-svm._w[2]/svm._w[0],0])
-plt.show()
-
-#Блок подготовки данных:
-iris = load_iris()
-X = iris.data
-Y = iris.target
-
-pca = PCA(n_components=2)
-X = pca.fit_transform(X)
-Y = (Y == 2).astype(int)*2-1
-
-X_train, X_test, Y_train, Y_test = train_test_split(X, Y, test_size=0.4, random_state=2020)
-
-#Блок инициализации и обучения:
-svm = CustomSVM(etha=0.03, alpha=0.0001, epochs=300)
-svm.fit(X_train, Y_train, X_test, Y_test)
-
-print(svm.train_errors[:150])
-print(svm._w)
-
-plt.plot(svm.train_loss, linewidth=2, label='train_loss')
-plt.plot(svm.val_loss, linewidth=2, label='test_loss')
-plt.grid()
-plt.legend(prop={'size': 15})
-plt.show()
-
-#Блок визуализации получившейся разделяющей полосы:
-d = {-1:'green', 1:'red'}
-plt.scatter(X_train[:,0], X_train[:,1], c=[d[y] for y in Y_train])
-newline([0,-svm._w[2]/svm._w[1]],[-svm._w[2]/svm._w[0],0], 'blue')
-newline([0,1/svm._w[1]-svm._w[2]/svm._w[1]],[1/svm._w[0]-svm._w[2]/svm._w[0],0])
-newline([0,-1/svm._w[1]-svm._w[2]/svm._w[1]],[-1/svm._w[0]-svm._w[2]/svm._w[0],0])
-plt.show()
-
-#Блок визуализации прогноза:
-y_pred = svm.predict(X_test)
-y_pred[y_pred != Y_test] = -100
-print('Количество ошибок для отложенной выборки: ', (y_pred == -100).astype(int).sum())
-d1 = {-1:'lime', 1:'m', -100: 'black'}
-plt.scatter(X_test[:,0], X_test[:,1], c=[d1[y] for y in y_pred])
-newline([0,-svm._w[2]/svm._w[1]],[-svm._w[2]/svm._w[0],0], 'blue')
-newline([0,1/svm._w[1]-svm._w[2]/svm._w[1]],[1/svm._w[0]-svm._w[2]/svm._w[0],0])
-newline([0,-1/svm._w[1]-svm._w[2]/svm._w[1]],[-1/svm._w[0]-svm._w[2]/svm._w[0],0])
-plt.show()
+print('SVM best Params:', svm_grid.best_params_)
+print('SVM best Score:', svm_grid.best_score_)
